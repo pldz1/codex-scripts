@@ -8,10 +8,10 @@
 
 | 系统 | 清理脚本 | 通知脚本 |
 | --- | --- | --- |
-| Windows | `windows/clean.ps1` | `windows/notiy.ps1` |
-| Ubuntu | `ubuntu/clean.sh` | `ubuntu/notiy.sh` |
+| Windows | `windows/clean.ps1` | `windows/notify.ps1` |
+| Ubuntu | `ubuntu/clean.sh` | `ubuntu/notify.sh` |
 
-文件名 `notiy` 沿用仓库现有 Windows 脚本的命名。
+文件名 `notify` 沿用仓库现有 Windows 脚本的命名。
 
 ## Ubuntu
 
@@ -22,7 +22,7 @@ Ubuntu 通知脚本使用 `notify-send`，并使用 Python 3 解析 Codex 传入
 ```bash
 sudo apt update
 sudo apt install -y libnotify-bin python3
-chmod +x ubuntu/clean.sh ubuntu/notiy.sh
+chmod +x ubuntu/clean.sh ubuntu/notify.sh
 ```
 
 ### 2. 配置任务完成通知
@@ -30,7 +30,7 @@ chmod +x ubuntu/clean.sh ubuntu/notiy.sh
 编辑用户级 `~/.codex/config.toml`，把路径替换为仓库的绝对路径：
 
 ```toml
-notify = ["bash", "/absolute/path/to/codex-config-ref/ubuntu/notiy.sh"]
+notify = ["bash", "/absolute/path/to/codex-config-ref/ubuntu/notify.sh"]
 ```
 
 Codex 会把通知事件作为 JSON 参数追加到命令后面。通知脚本会读取任务结果、事件类型和工作目录；无法解析 JSON 时，则直接把参数作为通知正文。
@@ -38,13 +38,13 @@ Codex 会把通知事件作为 JSON 参数追加到命令后面。通知脚本�
 可以先手动测试：
 
 ```bash
-./ubuntu/notiy.sh '{"type":"agent-turn-complete","cwd":"/tmp/demo","last-assistant-message":"任务已经完成"}'
+./ubuntu/notify.sh '{"type":"agent-turn-complete","cwd":"/tmp/demo","last-assistant-message":"任务已经完成"}'
 ```
 
 可选参数必须写在通知正文之前：
 
 ```bash
-./ubuntu/notiy.sh --title "My Codex" --duration 5000 "测试通知"
+./ubuntu/notify.sh --title "My Codex" --duration 5000 "测试通知"
 ```
 
 `--duration` 的单位是毫秒。部分 Ubuntu 桌面环境可能忽略应用指定的显示时长。
@@ -72,13 +72,13 @@ Codex 会把通知事件作为 JSON 参数追加到命令后面。通知脚本�
 编辑用户级 `%USERPROFILE%\.codex\config.toml`，把路径替换为脚本的绝对路径。TOML 基本字符串中的反斜杠需要写成双反斜杠：
 
 ```toml
-notify = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "D:\\path\\to\\codex-config-ref\\windows\\notiy.ps1"]
+notify = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "D:\\path\\to\\codex-config-ref\\windows\\notify.ps1"]
 ```
 
 手动测试：
 
 ```powershell
-.\windows\notiy.ps1 '{"type":"agent-turn-complete","cwd":"C:\\Temp\\demo","last-assistant-message":"任务已经完成"}'
+.\windows\notify.ps1 '{"type":"agent-turn-complete","cwd":"C:\\Temp\\demo","last-assistant-message":"任务已经完成"}'
 ```
 
 ### 清理 Codex 运行数据
