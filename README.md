@@ -1,17 +1,67 @@
-# Codex 配置辅助脚本
+# Codex 辅助工具
 
-这组脚本用于清理 Codex 本地运行数据，以及在任务结束时发送桌面通知。Windows 与 Ubuntu 版本的行为保持一致。
+这个项目提供 Codex 本地运行数据清理、任务完成桌面通知，以及通过 Azure Image Gen 生成图片的 Codex skill。清理和通知脚本同时支持 Windows 与 Ubuntu，且行为保持一致。
 
 > `clean` 会删除 `sessions`、临时目录、日志和本地数据库等运行数据。`auth.json` 与 `config.toml` 始终受保护，但执行前仍建议先使用预览模式确认范围。
 
-## 文件说明
+## 项目内容
 
-| 系统 | 清理脚本 | 通知脚本 |
+| 类型 | 路径 | 说明 |
 | --- | --- | --- |
-| Windows | `windows/clean.ps1` | `windows/notify.ps1` |
-| Ubuntu | `ubuntu/clean.sh` | `ubuntu/notify.sh` |
+| Windows 脚本 | `windows/` | 清理 Codex 运行数据并发送桌面通知 |
+| Ubuntu 脚本 | `ubuntu/` | 清理 Codex 运行数据并发送桌面通知 |
+| Azure Image Gen skill | `skills/azure-image-gen/` | 通过 Azure 图片生成部署创建图片文件 |
 
 文件名 `notify` 沿用仓库现有 Windows 脚本的命名。
+
+## Azure Image Gen skill
+
+`azure-image-gen` 是一个本地 Codex skill，可通过自己的 Azure 图片生成部署创建图片。当内置图片生成工具不可用，或需要使用指定 Azure 资源时，可以调用这个 skill。
+
+### 1. 安装
+
+在 WSL 或 Linux 中，将 skill 复制到本地 skills 目录：
+
+```bash
+mkdir -p ~/.agents/skills
+cp -R skills/azure-image-gen ~/.agents/skills/
+```
+
+### 2. 配置 Azure
+
+设置以下环境变量：
+
+```bash
+export AZURE_OPENAI_API_KEY='...'
+export AZURE_OPENAI_ENDPOINT='https://YOUR-RESOURCE.openai.azure.com/'
+export AZURE_OPENAI_IMAGE_DEPLOYMENT='YOUR-DEPLOYMENT-NAME'
+```
+
+API 版本可按需覆盖，默认值为 `preview`：
+
+```bash
+export AZURE_OPENAI_IMAGE_API_VERSION='preview'
+```
+
+密钥不要写入 Git 仓库、`SKILL.md`、命令参数或 `~/.codex/auth.json`。持久化配置方式见 [`skills/azure-image-gen/references/configuration.md`](skills/azure-image-gen/references/configuration.md)。
+
+### 3. 检查配置
+
+```bash
+python3 ~/.agents/skills/azure-image-gen/scripts/azure_image_generate.py --check
+```
+
+该命令只检查配置状态，不会输出 API 密钥。
+
+### 4. 在 Codex 中使用
+
+显式调用：
+
+```text
+$azure-image-gen 生成一张 1536x1024 的电影感概念图，保存到当前项目。
+```
+
+该 skill 也允许隐式调用，因此可以直接向 Codex 提出图片生成请求。详细工作流程和参数约束见 [`skills/azure-image-gen/SKILL.md`](skills/azure-image-gen/SKILL.md)。
 
 ## Ubuntu
 
@@ -30,7 +80,7 @@ chmod +x ubuntu/clean.sh ubuntu/notify.sh
 编辑用户级 `~/.codex/config.toml`，把路径替换为仓库的绝对路径：
 
 ```toml
-notify = ["bash", "/absolute/path/to/codex-config-ref/ubuntu/notify.sh"]
+notify = ["bash", "/absolute/path/to/codex-scripts/ubuntu/notify.sh"]
 ```
 
 Codex 会把通知事件作为 JSON 参数追加到命令后面。通知脚本会读取任务结果、事件类型和工作目录；无法解析 JSON 时，则直接把参数作为通知正文。
@@ -72,7 +122,7 @@ Codex 会把通知事件作为 JSON 参数追加到命令后面。通知脚本�
 编辑用户级 `%USERPROFILE%\.codex\config.toml`，把路径替换为脚本的绝对路径。TOML 基本字符串中的反斜杠需要写成双反斜杠：
 
 ```toml
-notify = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "D:\\path\\to\\codex-config-ref\\windows\\notify.ps1"]
+notify = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "D:\\path\\to\\codex-scripts\\windows\\notify.ps1"]
 ```
 
 手动测试：
