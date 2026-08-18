@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | 清理运行数据 | [`clean-all/`](clean-all/) | 预览或删除 Codex 缓存、日志和临时数据 |
 | 桌面通知 | [`notify/`](notify/) | 解析 Codex 通知事件并显示 Ubuntu/Windows 通知 |
+| VS Code 扩展工具复用 | [`vsc-extension-tool/`](vsc-extension-tool/) | 直接调用 VS Code Codex 扩展内置的命令行工具 |
 | Azure 图片生成 skill | [`skills/azure-image-gen/`](skills/azure-image-gen/) | 通过 Azure GPT-Image-2 部署生成图片 |
 
 各功能的安装、参数和安全说明见对应目录的 README。
