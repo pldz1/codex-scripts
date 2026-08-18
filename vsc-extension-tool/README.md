@@ -14,8 +14,7 @@ VS Code 里的 Codex 插件和单独安装的 Codex 使用的是同一套 Codex 
 
 Ubuntu 启动器位于 `ubuntu/openai-vscode-tool`。仓库中只保留这一个启动器，不再保存 `codex`、`rg` 等软链接；它会按以下顺序查找扩展：
 
-1. `~/.vscode-server/extensions`（VS Code Remote/WSL/SSH）
-2. `~/.vscode/extensions`（本机 VS Code）
+1. `~/.vscode/extensions`
 
 ### 安装启动器
 
@@ -105,6 +104,6 @@ rg.bat --version
 ## 故障排查
 
 - 提示找不到可执行文件：确认 VS Code 的 OpenAI ChatGPT/Codex 扩展已安装，并检查启动器搜索的扩展目录。
-- Ubuntu/WSL 找不到扩展：确认扩展安装在当前 WSL 用户下的 `~/.vscode-server/extensions` 或 `~/.vscode/extensions`，而不是只安装在 Windows 端。
+- Ubuntu/WSL 找不到扩展：确认扩展安装在当前 WSL 用户下的 `~/.vscode/extensions` 或者其他PATH，而不是只安装在 Windows 端。
 - Windows 找不到扩展：确认扩展目录位于 `%USERPROFILE%\.vscode\extensions`，且目录名匹配 `openai.chatgpt-*-win32-x64`。
 - 命令仍指向旧版本：重新打开终端后再检查 `command -v codex`（Ubuntu）或 `Get-Command codex`（Windows），并确认 PATH 中没有更靠前的同名命令。

@@ -12,7 +12,6 @@ APP_NAME="$(basename "$0")"
 
 # Prefer VS Code Server (Remote/WSL/SSH), then local VS Code.
 SEARCH_ROOTS=(
-  "$HOME/.vscode-server/extensions"
   "$HOME/.vscode/extensions"
 )
 
