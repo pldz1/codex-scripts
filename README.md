@@ -1,8 +1,8 @@
 # Codex 辅助工具
 
-> 最后更新：2026-08-18
+> 最后更新：2026-08-20
 
-本仓库提供 Codex 运行数据清理脚本、任务完成桌面通知脚本，以及 Azure GPT-Image-2 图片生成 skill。清理和通知脚本分别按功能放在独立目录，并同时支持 Ubuntu 与 Windows。
+本仓库提供 Codex 运行数据清理脚本、任务完成桌面通知脚本、会话管理工具，以及 Azure GPT-Image-2 图片生成 skill。清理和通知脚本分别按功能放在独立目录，并同时支持 Ubuntu 与 Windows。
 
 ## 目录
 
@@ -12,6 +12,7 @@
 | 桌面通知 | [`notify/`](notify/) | 解析 Codex 通知事件并显示 Ubuntu/Windows 通知 |
 | VS Code 扩展工具复用 | [`vsc-extension-tool/`](vsc-extension-tool/) | 直接调用 VS Code Codex 扩展内置的命令行工具 |
 | Azure 图片生成 skill | [`skills/azure-image-gen/`](skills/azure-image-gen/) | 通过 Azure GPT-Image-2 部署生成图片 |
+| Codex 会话管理 skill | [`skills/codex-session-manager/`](skills/codex-session-manager/) | 通过 Python CLI 和本地 Web UI 管理 Codex 会话 |
 
 各功能的安装、参数和安全说明见对应目录的 README。
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Session Manager"
+  short_description: "List, inspect, archive, and delete local Codex sessions"
+  default_prompt: "Use $codex-session-manager to inspect and safely manage my local Codex sessions."

@@ -1,6 +1,17 @@
 # Skills
 
-> 最后更新：2026-08-18
+> 最后更新：2026-08-20
+
+## Codex Session Manager
+
+[`codex-session-manager/`](codex-session-manager/) 提供无第三方依赖的 Python CLI 和本地 Web UI，用完整 UUID 列出、检查、归档、恢复或删除 Codex 会话。
+
+```bash
+python3 codex-session-manager/codex_sessions.py list
+python3 codex-session-manager/codex_sessions.py web --open
+```
+
+详情及删除安全说明见 [`codex-session-manager/README.md`](codex-session-manager/README.md)。
 
 ## Azure GPT-Image-2 Codex skill
 
