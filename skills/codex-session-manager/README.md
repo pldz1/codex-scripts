@@ -5,7 +5,7 @@
 ## 要求
 
 - Python 3.10+
-- 已安装且可在 `PATH` 中调用的 Codex CLI
+- 已安装且能被当前 Python 进程从 `PATH` 找到的 Codex CLI
 - Codex CLI 版本需包含 `archive`、`unarchive`、`delete --force` 子命令
 
 工具从 `$CODEX_HOME` 读取数据；未设置时使用 `~/.codex`。列表和详情只读扫描 `sessions`、`archived_sessions` 及 `session_index.jsonl`，归档和删除则始终调用官方 Codex CLI，不直接修改内部存储。
@@ -29,6 +29,16 @@ python3 codex_sessions.py delete <SESSION_ID>
 ```bash
 CODEX_BINARY=/path/to/codex python3 codex_sessions.py list
 ```
+
+Windows PowerShell：
+
+```powershell
+$env:CODEX_BINARY = "C:\Users\me\.vscode\extensions\openai.chatgpt-<version>-win32-x64\bin\windows-x86_64\codex.exe"
+python .\codex_sessions.py list
+```
+
+可以在 PowerShell 中用 `Get-Command codex` 检查 PATH；如果结果是 `codex.bat` 或 `codex.cmd`，
+但 Python 仍找不到，可以将该文件的完整路径设置给 `CODEX_BINARY`。
 
 ## Web UI
 

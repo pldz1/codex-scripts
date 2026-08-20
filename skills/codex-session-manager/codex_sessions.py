@@ -44,6 +44,11 @@ class CodexCommandError(SessionError):
     pass
 
 
+def _resolve_codex_binary(configured: str) -> str | None:
+    """Resolve the CLI using the current process environment."""
+    return shutil.which(configured)
+
+
 @dataclasses.dataclass(frozen=True)
 class Session:
     id: str
@@ -212,13 +217,17 @@ class SessionBackend:
         raise SessionNotFound(f"Session not found: {normalized}")
 
     def _run_codex(self, arguments: list[str]) -> None:
-        if shutil.which(self.codex_binary) is None:
-            raise CodexCommandError(f"Codex CLI executable not found: {self.codex_binary}")
+        executable = _resolve_codex_binary(self.codex_binary)
+        if executable is None:
+            raise CodexCommandError(
+                f"Codex CLI executable not found: {self.codex_binary}."
+                " Set CODEX_BINARY to its full path if it is not on PATH."
+            )
         environment = os.environ.copy()
         environment["CODEX_HOME"] = str(self.codex_home)
         try:
             completed = subprocess.run(
-                [self.codex_binary, *arguments],
+                [executable, *arguments],
                 capture_output=True,
                 text=True,
                 check=False,
