@@ -1,0 +1,4 @@
+interface:
+  display_name: "PLDZ 技术文章写作"
+  short_description: "按 PLDZ 风格写面向实践、可运行、带验证过程的技术文章"
+  default_prompt: "使用 $write-pldz-articles，先判断这是工具分享、技术文章、教程还是项目介绍，再读取 INPUT.md，把有的内容按我的原文口吻写入 OUTPUT.md，不补漂亮总结。"
