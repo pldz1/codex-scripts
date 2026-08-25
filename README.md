@@ -11,6 +11,7 @@
 | 清理运行数据 | [`clean-all/`](clean-all/) | 预览或删除 Codex 缓存、日志和临时数据 |
 | 桌面通知 | [`notify/`](notify/) | 解析 Codex 通知事件并显示 Ubuntu/Windows 通知 |
 | VS Code 扩展工具复用 | [`vsc-extension-tool/`](vsc-extension-tool/) | 直接调用 VS Code Codex 扩展内置的命令行工具 |
+| Codex Web UI | [`web-ui/`](web-ui/) | 在浏览器中通过本地 WebSocket 管理和使用 Codex 会话 |
 | Azure 图片生成 skill | [`skills/azure-image-gen/`](skills/azure-image-gen/) | 通过 Azure GPT-Image-2 部署生成图片 |
 | Codex 会话管理 skill | [`skills/codex-session-manager/`](skills/codex-session-manager/) | 通过 Python CLI 和本地 Web UI 管理 Codex 会话 |
 
@@ -43,3 +44,17 @@ chmod +x clean-all/ubuntu/clean.sh notify/ubuntu/notify.sh
 ## Azure Image Gen
 
 配置 `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT`（或 `AZURE_OPENAI_BASE_URL`）和 `AZURE_OPENAI_IMAGE_DEPLOYMENT` 后，按 [`skills/README.md`](skills/README.md) 安装和测试。密钥不要写入仓库、命令参数或 Codex 配置文件。
+
+## Codex Web UI
+
+[`web-ui/`](web-ui/) 是一个运行在本机的轻量 Codex Web UI：浏览器通过 WebSocket 连接 Node 服务，Node 再通过 stdio JSON-RPC 与 `codex app-server` 通讯。它支持浏览和管理 Codex sessions、创建对话、流式查看回答与工具调用、查看文件和 diff，并可选择 workspace。
+
+开发运行：
+
+```bash
+cd web-ui
+npm install
+npm run dev
+```
+
+默认访问 <http://127.0.0.1:8765/>。生产部署、后台运行、认证和反向代理配置请参阅 [`web-ui/README.md`](web-ui/README.md)。

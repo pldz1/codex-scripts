@@ -15,11 +15,17 @@ async def check_page(browser, viewport, name):
     response = await page.goto(BASE + "?demo=1", wait_until="networkidle")
     assert response and response.ok, f"Page failed: {response.status if response else 'none'}"
     await page.locator(".tool-row").first.wait_for()
+    assert await page.get_by_role("button", name="Allow + update exec policy").count() == 1
     assert await page.locator(".tool-row.file_change .tool-summary").first.get_attribute("aria-expanded") == "false"
     overflow = await page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
     assert not overflow, f"Horizontal overflow at {viewport}"
     await page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
     if name == "desktop":
+        file_link = page.locator(".workspace-file-link").first
+        assert (await file_link.get_attribute("href")).startswith("/codex/?file=")
+        await file_link.click()
+        await page.locator(".file-drawer .preview-pane pre").wait_for()
+        await page.get_by_role("button", name="Close files").click()
         await page.get_by_role("button", name="Changes").click()
         await page.locator(".diff-drawer").wait_for()
         assert await page.locator(".diff-drawer .added").count() > 0
@@ -113,6 +119,20 @@ async def check_page(browser, viewport, name):
         await page.get_by_role("button", name="Close settings").click()
     await page.get_by_role("button", name="Files").first.click()
     await page.locator(".file-drawer").wait_for()
+    if name == "desktop":
+        await page.get_by_role("button", name="New file").click()
+        await page.locator(".new-file-form input").fill("scratch.md")
+        await page.locator(".new-file-form").get_by_role("button", name="Create", exact=True).click()
+        await page.locator(".preview-head", has_text="scratch.md").wait_for()
+        await page.get_by_role("button", name="Delete file").click()
+        await page.locator(".delete-confirm").get_by_role("button", name="Delete", exact=True).click()
+        await page.locator(".preview-empty").wait_for()
+        await page.locator(".upload-notice", has_text="deleted").wait_for()
+        async with page.expect_file_chooser() as upload_info:
+            await page.locator(".upload-button").click()
+        upload_chooser = await upload_info.value
+        await upload_chooser.set_files({"name": "uploaded.txt", "mimeType": "text/plain", "buffer": b"uploaded from Files drawer"})
+        await page.locator(".upload-notice", has_text="uploaded").wait_for()
     await page.locator(".tree-pane .tree-row.folder", has_text="src").click()
     await page.locator(".tree-pane .tree-row.file", has_text="users.ts").click()
     await page.locator(".preview-pane pre").wait_for()
@@ -141,6 +161,11 @@ async def main():
             await page.goto(BASE + "?demo=1", wait_until="networkidle")
             assert not await page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
             await page.close()
+        deep_link = await browser.new_page(viewport={"width": 1280, "height": 800})
+        await deep_link.goto(BASE + "?demo=1&file=src%2Fserver%2Fusers.ts", wait_until="networkidle")
+        await deep_link.locator(".file-drawer .preview-pane pre").wait_for()
+        assert deep_link.url.startswith(BASE)
+        await deep_link.close()
         live = await browser.new_page(viewport={"width": 1280, "height": 800})
         failures = []
         live.on("requestfailed", lambda r: failures.append(r.url))
@@ -160,9 +185,19 @@ async def main():
         await live.get_by_role("button", name="Send").click()
         await live.locator(".workspace-picker").wait_for()
         assert await composer.input_value() == "draft prompt survives workspace selection"
-        await live.get_by_role("button", name="Close workspace picker").click()
+        await live.get_by_role("button", name="Use this folder").click()
+        await live.locator(".workspace-picker").wait_for(state="detached", timeout=10_000)
+        assert await composer.input_value() == "draft prompt survives workspace selection"
         assert all("/codex/" in url for url in failures), f"Request escaped base path: {failures}"
         await live.reload(wait_until="domcontentloaded")
+        await live.locator(".connection.online").wait_for(timeout=10_000)
+        first_session = live.locator(".desktop-sidebar .thread .thread-main").first
+        await first_session.click()
+        await live.wait_for_function("new URL(location.href).searchParams.has('session')", timeout=15_000)
+        remembered_session = await live.evaluate("new URL(location.href).searchParams.get('session')")
+        await live.reload(wait_until="domcontentloaded")
+        await live.locator(".thread.active").wait_for(timeout=20_000)
+        assert await live.evaluate("new URL(location.href).searchParams.get('session')") == remembered_session
         await live.close()
         await browser.close()
     print(f"UI verification passed; global sessions loaded: {thread_count}")

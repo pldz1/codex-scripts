@@ -6,6 +6,7 @@ export type JsonRpcMessage = {
   result?: any;
   error?: { code: number; message: string; data?: any };
 };
+export type ApprovalDecision = string | Record<string, unknown>;
 
 export type UiItem =
   | { type: "user_message"; id: string; text: string; attachments?: Array<{ name: string; kind: "image" | "audio" | "text"; data?: string }> }
@@ -14,5 +15,5 @@ export type UiItem =
   | { type: "command"; id: string; command: string; output: string; status: "running" | "done" | "error" }
   | { type: "file_read"; id: string; path: string }
   | { type: "file_change"; id: string; path: string; diff?: string; status?: string }
-  | { type: "approval"; id: string; requestId: JsonRpcId; description: string; status: "pending" | "approved" | "denied"; decisions: string[]; approvalKind: "command" | "file" }
+  | { type: "approval"; id: string; requestId: JsonRpcId; description: string; status: "pending" | "approved" | "denied"; decisions: ApprovalDecision[]; approvalKind: "command" | "file" }
   | { type: "error"; id: string; message: string };

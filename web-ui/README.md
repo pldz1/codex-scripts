@@ -4,15 +4,20 @@
 
 Codex 的登录状态、配置和 session 仍由 Codex 自己管理；Web UI 不读取或保存 Codex 凭据。
 
+## 演示
+
+![Codex Web UI 演示](src/assets/web-ui-demo.gif)
+
 ## 功能
 
 - 加载本机 Codex CLI、VS Code、exec、app-server 和 sub-agent sessions
 - 创建、恢复、归档、取消归档、批量操作和删除 session
+- 当前 session 写入 `?session=<id>`，刷新页面后自动恢复
 - 首次对话前选择 workspace；也可以通过环境变量预选
 - 从真实 `model/list` 读取模型与 reasoning effort
 - 流式显示回答、thinking、命令、工具调用、approval 和文件修改
 - 粘贴或选择图片及常见文本/代码附件；图片支持点击预览
-- 文件树、文本文件预览与编辑
+- 文件树、文本文件创建/删除、预览与编辑；支持向 workspace 目录上传文件
 - 按文件查看 Changes/Diff
 - 显示 context window、compact 状态、账号 usage 和实时内存占用
 - 支持部署在 `/codex/` 之类的反向代理子路径
@@ -238,6 +243,42 @@ export CODEX_WEB_BASE_PATH=/codex
 ```
 
 页面静态资源和 WebSocket 都会使用同一个 base path。
+
+聊天回答中的本地文件链接也会使用该 base path。例如设置 `/codex` 后，workspace 文件链接会转换为：
+
+```text
+/codex/?file=src%2Fserver%2Fusers.ts
+```
+
+点击后直接在 Files 抽屉中预览；复制到新标签页打开也不会跳出 `/codex/`。只有当前 workspace 内的文件可以打开，workspace 外的绝对路径会显示为不可用链接。
+
+## Files 文件管理与上传
+
+Files 抽屉的路径栏提供 New 和 Upload。默认在 workspace 根目录操作；先点击文件树中的目录，可以切换目标目录。New 创建空文件，预览顶部的 Delete 会在二次确认后删除当前文件。创建、删除和上传都被限制在当前 workspace 内；Delete 不会删除目录或符号链接。
+
+限制：
+
+- 单文件最大 10 MB
+- 单批最大 25 MB
+- 单次最多选择 10 个文件
+- 不覆盖同名文件
+- 只能写入当前 workspace，不能通过 `..`、绝对路径或符号链接逃逸
+
+文本文件上传后可以直接预览和编辑；二进制文件会出现在文件树中，但不支持文本预览。
+
+Files 只对常见纯文本和代码格式启用预览/编辑，例如 `.txt`、`.md`、`.json`、`.yaml`、`.csv`、`.js`、`.ts`、`.tsx`、`.py`、`.go`、`.rs`、`.java`、`.c/.cpp`、`.html`、`.css`、`.sh`、`.toml`、`.ini`、`.sql`、`.ps1`，以及 `Dockerfile`、`Makefile`、`.env`、`.gitignore` 等。文本预览/编辑上限为 10 MB；超过 1 MB 时使用不带逐行 DOM 的轻量预览。
+
+Word、PDF、Excel、图片、压缩包和其他二进制/办公格式可以上传和保存在 workspace 中，但 Files 不会尝试解析、预览或编辑，只显示文件大小和不可预览说明。
+
+## Session URL
+
+打开或创建 session 成功后，浏览器地址会自动包含：
+
+```text
+/codex/?session=<thread-id>
+```
+
+刷新该地址会等待 Codex app-server ready，然后自动执行 thread resume。`session` 可以与 `file` 参数共存；选择新 workspace、创建空白对话或删除当前 session 时会清除旧的 session 参数。
 
 ## 内存说明
 

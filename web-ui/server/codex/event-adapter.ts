@@ -27,7 +27,7 @@ export function adapt(message: JsonRpcMessage): { threadId?: string; items?: UiI
   return null;
 }
 
-export function approval(message: JsonRpcMessage): UiItem | null {
+export function approval(message: JsonRpcMessage): Extract<UiItem, { type: "approval" }> | null {
   const p = message.params || {};
   if (message.id === undefined) return null;
   if (message.method === "item/commandExecution/requestApproval") return { type: "approval", id: `approval-${message.id}`, requestId: message.id, description: p.command || p.reason || "Run command", status: "pending", decisions: p.availableDecisions || ["accept", "acceptForSession", "decline"], approvalKind: "command" };

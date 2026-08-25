@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const hidden = new Set([".git", "node_modules", "dist", "build", ".next", "coverage"]);
-const MAX_FILE_SIZE = 1024 * 1024;
+const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const textExtensions = new Set([".txt", ".md", ".mdx", ".json", ".jsonc", ".yaml", ".yml", ".xml", ".csv", ".tsv", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".py", ".pyi", ".rs", ".go", ".java", ".c", ".cc", ".cpp", ".h", ".hpp", ".css", ".scss", ".sass", ".less", ".html", ".htm", ".sh", ".bash", ".zsh", ".fish", ".toml", ".ini", ".conf", ".cfg", ".log", ".sql", ".graphql", ".gql", ".vue", ".svelte", ".kt", ".kts", ".swift", ".rb", ".php", ".scala", ".lua", ".r", ".ps1", ".bat", ".cmd", ".diff", ".patch"]);
+const textNames = new Set(["dockerfile", "makefile", "procfile", "gemfile", "rakefile", "license", "readme", ".gitignore", ".gitattributes", ".editorconfig", ".npmrc", ".nvmrc"]);
+const canPreviewText = (file: string) => { const name = path.basename(file).toLowerCase(); return textNames.has(name) || name === ".env" || name.startsWith(".env.") || textExtensions.has(path.extname(name)); };
 
 export class WorkspaceFs {
   private root = "";
@@ -78,18 +82,58 @@ export class WorkspaceFs {
     const file = await this.safe(relative);
     const stat = await fs.stat(file);
     if (!stat.isFile()) throw new Error("Not a file");
-    if (stat.size > MAX_FILE_SIZE) throw new Error("File exceeds 1 MB preview limit");
+    if (!canPreviewText(file)) return { path: relative, size: stat.size, previewable: false, reason: "Preview is available only for common text and code files" };
+    if (stat.size > MAX_TEXT_FILE_SIZE) return { path: relative, size: stat.size, previewable: false, reason: "Text file exceeds 10 MB preview limit" };
     const buffer = await fs.readFile(file);
-    if (buffer.subarray(0, 8000).includes(0)) throw new Error("Binary files cannot be previewed");
-    return { path: relative, content: buffer.toString("utf8"), size: stat.size };
+    if (buffer.subarray(0, 8000).includes(0)) return { path: relative, size: stat.size, previewable: false, reason: "Binary content cannot be previewed as text" };
+    return { path: relative, content: buffer.toString("utf8"), size: stat.size, previewable: true };
   }
 
   async write(relative: string, content: string) {
-    if (Buffer.byteLength(content, "utf8") > MAX_FILE_SIZE) throw new Error("File exceeds 1 MB edit limit");
+    if (Buffer.byteLength(content, "utf8") > MAX_TEXT_FILE_SIZE) throw new Error("File exceeds 10 MB edit limit");
     const file = await this.safe(relative);
     const stat = await fs.stat(file);
     if (!stat.isFile()) throw new Error("Not a file");
+    if (!canPreviewText(file)) throw new Error("Only common text and code files can be edited");
     await fs.writeFile(file, content, "utf8");
     return this.read(relative);
+  }
+
+  async upload(directory: string, name: string, encoded: string) {
+    if (!name || name === "." || name === ".." || name.includes("/") || name.includes("\\")) throw new Error("Invalid upload filename");
+    if (encoded.length > Math.ceil(MAX_UPLOAD_SIZE / 3) * 4 + 4) throw new Error("Upload exceeds 10 MB limit");
+    if (encoded && (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))) throw new Error("Invalid base64 upload data");
+    const parent = await this.safe(directory);
+    const stat = await fs.stat(parent);
+    if (!stat.isDirectory()) throw new Error("Upload destination is not a directory");
+    const buffer = Buffer.from(encoded, "base64");
+    if (buffer.length > MAX_UPLOAD_SIZE) throw new Error("Upload exceeds 10 MB limit");
+    const file = path.join(parent, name);
+    if (!this.inside(this.root, file)) throw new Error("Upload escapes workspace root");
+    try { await fs.writeFile(file, buffer, { flag: "wx" }); } catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("A file with this name already exists"); throw error; }
+    return { path: path.posix.join(directory.replaceAll("\\", "/"), name), size: buffer.length };
+  }
+
+  async create(directory: string, name: string) {
+    if (!name || name === "." || name === ".." || name.includes("/") || name.includes("\\")) throw new Error("Invalid filename");
+    const parent = await this.safe(directory);
+    const stat = await fs.stat(parent);
+    if (!stat.isDirectory()) throw new Error("File destination is not a directory");
+    const file = path.join(parent, name);
+    if (!this.inside(this.root, file)) throw new Error("File escapes workspace root");
+    try { await fs.writeFile(file, "", { encoding: "utf8", flag: "wx" }); } catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("A file with this name already exists"); throw error; }
+    return this.read(path.posix.join(directory.replaceAll("\\", "/"), name));
+  }
+
+  async delete(relative: string) {
+    if (!relative || path.isAbsolute(relative)) throw new Error("Invalid file path");
+    const candidate = path.resolve(this.root, relative);
+    if (!this.inside(this.root, candidate)) throw new Error("Path escapes workspace root");
+    const parent = await fs.realpath(path.dirname(candidate));
+    if (!this.inside(this.root, parent)) throw new Error("Path escapes workspace root");
+    const stat = await fs.lstat(candidate);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("Only regular files can be deleted");
+    await fs.unlink(candidate);
+    return { path: relative.replaceAll("\\", "/") };
   }
 }

@@ -34,11 +34,13 @@ const threadItems = (thread: any) => (thread.turns || []).flatMap((turn: any) =>
 
 export function wireSockets(wss: WebSocketServer, codex: CodexClient, fs: WorkspaceFs, meta: any) {
   const clients = new Set<WebSocket>();
+  const pendingApprovals = new Map<string | number, { threadId?: string; item: any }>();
   const broadcast = (data: any) => clients.forEach((socket) => send(socket, data));
   codex.on("status", (status) => broadcast({ type: "status", ...meta(), codexStatus: status }));
   codex.on("message", (message) => {
     const request = approval(message);
-    if (request) return broadcast({ type: "items", threadId: message.params?.threadId, items: [request] });
+    if (request) { pendingApprovals.set(request.requestId, { threadId: message.params?.threadId, item: request }); return broadcast({ type: "items", threadId: message.params?.threadId, items: [request] }); }
+    if (message.method === "turn/completed" || message.method === "error") for (const [id, entry] of pendingApprovals) if (entry.threadId === message.params?.threadId) pendingApprovals.delete(id);
     const event = adapt(message); if (event) broadcast({ type: "event", ...event });
   });
 
@@ -62,7 +64,8 @@ export function wireSockets(wss: WebSocketServer, codex: CodexClient, fs: Worksp
           if (result.thread?.cwd) {
             try { await fs.selectAbsolute(result.thread.cwd); broadcast({ type: "status", ...meta(), codexStatus: codex.status }); } catch { /* The session can still be viewed outside the file-browser root. */ }
           }
-          send(socket, { type: "thread.active", thread: result.thread, items: threadItems(result.thread), compaction: compactionFor(result.thread), model: result.model, effort: result.reasoningEffort });
+          const pending = [...pendingApprovals.values()].filter((entry) => entry.threadId === result.thread.id).map((entry) => entry.item);
+          send(socket, { type: "thread.active", thread: result.thread, items: [...threadItems(result.thread), ...pending], compaction: compactionFor(result.thread), model: result.model, effort: result.reasoningEffort });
         } else if (msg.type === "thread.archive") {
           await codex.request("thread/archive", { threadId: msg.threadId });
           broadcast({ type: "thread.mutated", action: "archive", threadId: msg.threadId });
@@ -82,10 +85,18 @@ export function wireSockets(wss: WebSocketServer, codex: CodexClient, fs: Worksp
           const result = await codex.request("turn/start", { threadId: msg.threadId, input, model: msg.model || null, effort: msg.effort || null, summary: "auto" });
           send(socket, { type: "turn.accepted", turnId: result.turn.id });
         } else if (msg.type === "turn.interrupt") await codex.request("turn/interrupt", { threadId: msg.threadId, turnId: msg.turnId });
-        else if (msg.type === "approval.respond") codex.respond(msg.requestId, { decision: msg.decision });
-        else if (msg.type === "fs.list") send(socket, { type: "fs.entries", path: msg.path || "", entries: await fs.list(msg.path || "") });
-        else if (msg.type === "fs.read") send(socket, { type: "fs.file", file: await fs.read(msg.path) });
-        else if (msg.type === "fs.write") send(socket, { type: "fs.saved", file: await fs.write(msg.path, String(msg.content ?? "")) });
+        else if (msg.type === "approval.respond") { pendingApprovals.delete(msg.requestId); codex.respond(msg.requestId, { decision: msg.decision }); }
+        else if (msg.type === "fs.list") { try { send(socket, { type: "fs.entries", path: msg.path || "", entries: await fs.list(msg.path || "") }); } catch (error) { send(socket, { type: "fs.entries", path: msg.path || "", error: error instanceof Error ? error.message : String(error) }); } }
+        else if (msg.type === "fs.read") { try { send(socket, { type: "fs.file", path: msg.path, file: await fs.read(msg.path) }); } catch (error) { send(socket, { type: "fs.file", path: msg.path, error: error instanceof Error ? error.message : String(error) }); } }
+        else if (msg.type === "fs.write") { try { send(socket, { type: "fs.saved", path: msg.path, file: await fs.write(msg.path, String(msg.content ?? "")) }); } catch (error) { send(socket, { type: "fs.saved", path: msg.path, error: error instanceof Error ? error.message : String(error) }); } }
+        else if (msg.type === "fs.create") { try { send(socket, { type: "fs.created", requestId: msg.requestId, file: await fs.create(String(msg.directory || ""), String(msg.name || "")) }); } catch (error) { send(socket, { type: "fs.created", requestId: msg.requestId, error: error instanceof Error ? error.message : String(error) }); } }
+        else if (msg.type === "fs.delete") { try { send(socket, { type: "fs.deleted", requestId: msg.requestId, file: await fs.delete(String(msg.path || "")) }); } catch (error) { send(socket, { type: "fs.deleted", requestId: msg.requestId, error: error instanceof Error ? error.message : String(error) }); } }
+        else if (msg.type === "fs.upload") {
+          try {
+            const file = await fs.upload(String(msg.directory || ""), String(msg.name || ""), String(msg.data || ""));
+            send(socket, { type: "fs.uploaded", requestId: msg.requestId, file });
+          } catch (error) { send(socket, { type: "fs.uploaded", requestId: msg.requestId, error: error instanceof Error ? error.message : String(error) }); }
+        }
         else if (msg.type === "workspace.list") send(socket, { type: "workspace.entries", path: msg.path || "", entries: await fs.listWorkspaces(msg.path || ""), base: fs.basePath, current: fs.path });
         else if (msg.type === "system.usage") {
           const memory = process.memoryUsage(); const codexRss = await processRss(codex.pid);

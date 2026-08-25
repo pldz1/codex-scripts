@@ -1,4 +1,5 @@
 export type UserAttachment = { name: string; kind: "image" | "audio" | "text"; data?: string };
+export type ApprovalDecision = string | Record<string, unknown>;
 export type UiItem =
   | { type: "user_message"; id: string; text: string; attachments?: UserAttachment[] }
   | { type: "assistant_message"; id: string; text: string; streaming: boolean }
@@ -6,7 +7,7 @@ export type UiItem =
   | { type: "command"; id: string; command: string; output: string; status: "running" | "done" | "error" }
   | { type: "file_read"; id: string; path: string }
   | { type: "file_change"; id: string; path: string; diff?: string; status?: string }
-  | { type: "approval"; id: string; requestId: number | string; description: string; status: "pending" | "approved" | "denied"; decisions: string[]; approvalKind: "command" | "file" }
+  | { type: "approval"; id: string; requestId: number | string; description: string; status: "pending" | "approved" | "denied"; decisions: ApprovalDecision[]; approvalKind: "command" | "file" }
   | { type: "error"; id: string; message: string };
 
 export type Thread = { id: string; preview: string; name?: string | null; cwd?: string; updatedAt: number; status?: { type?: string } | string };
