@@ -26,6 +26,8 @@ UUID_RE = re.compile(
 )
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 WEB_FILE = SCRIPT_DIR / "web" / "index.html"
+FALLBACK_TITLE_LENGTH = 80
+UNTITLED_SESSION = "Untitled session"
 
 
 class SessionError(RuntimeError):
@@ -134,6 +136,40 @@ class SessionBackend:
         return payload if isinstance(payload, dict) else None
 
     @staticmethod
+    def _fallback_title(path: pathlib.Path) -> str | None:
+        """Use the first real user prompt when the session index has no title."""
+        try:
+            with path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if record.get("type") != "response_item":
+                        continue
+                    payload = record.get("payload")
+                    if not isinstance(payload, dict) or payload.get("role") != "user":
+                        continue
+                    content = payload.get("content")
+                    if not isinstance(content, list):
+                        continue
+                    for part in content:
+                        if not isinstance(part, dict) or part.get("type") != "input_text":
+                            continue
+                        text = part.get("text")
+                        if not isinstance(text, str):
+                            continue
+                        title = " ".join(text.split())
+                        if not title or title.startswith("<environment_context>"):
+                            continue
+                        if len(title) > FALLBACK_TITLE_LENGTH:
+                            title = title[: FALLBACK_TITLE_LENGTH - 1].rstrip() + "…"
+                        return title
+        except (OSError, UnicodeDecodeError):
+            pass
+        return None
+
+    @staticmethod
     def _iso_timestamp(value: Any, fallback: float) -> str:
         if isinstance(value, str) and value.strip():
             try:
@@ -161,7 +197,7 @@ class SessionBackend:
         index_entry = index.get(session_id, {})
         return Session(
             id=session_id,
-            title=index_entry.get("title", session_id),
+            title=index_entry.get("title") or self._fallback_title(path) or UNTITLED_SESSION,
             cwd=str(metadata.get("cwd") or ""),
             updated_at=self._iso_timestamp(index_entry.get("updated_at"), stat.st_mtime),
             created_at=self._iso_timestamp(metadata.get("timestamp"), stat.st_ctime),
@@ -245,6 +281,38 @@ class SessionBackend:
         self._run_codex(["delete", "--force", session.id])
         return {"id": session.id, "operation": "deleted"}
 
+    def delete_sessions(self, session_ids: Iterable[str]) -> dict[str, Any]:
+        """Delete sessions sequentially and report partial failures."""
+        raw_ids = list(session_ids)
+        if not raw_ids:
+            raise SessionError("At least one session UUID is required")
+        deleted: list[str] = []
+        failed: list[dict[str, str]] = []
+        normalized_ids: list[str] = []
+        seen: set[str] = set()
+        for session_id in raw_ids:
+            try:
+                normalized = self._validate_id(session_id)
+            except SessionError as exc:
+                failed.append({"id": str(session_id), "error": str(exc)})
+                continue
+            if normalized not in seen:
+                normalized_ids.append(normalized)
+                seen.add(normalized)
+        existing = {session.id for session in self.list_sessions()}
+        for session_id in normalized_ids:
+            if session_id not in existing:
+                failed.append(
+                    {"id": session_id, "error": f"Session not found: {session_id}"}
+                )
+                continue
+            try:
+                self._run_codex(["delete", "--force", session_id])
+                deleted.append(session_id)
+            except SessionError as exc:
+                failed.append({"id": session_id, "error": str(exc)})
+        return {"deleted": deleted, "failed": failed}
+
     def archive_session(self, session_id: str) -> dict[str, Any]:
         session = self._existing(session_id)
         if session.archived:
@@ -287,6 +355,18 @@ def make_handler(backend: SessionBackend, web_file: pathlib.Path) -> type[BaseHT
         def _parts(self) -> list[str]:
             path = urllib.parse.urlsplit(self.path).path
             return [urllib.parse.unquote(part) for part in path.split("/") if part]
+
+        def _read_json(self) -> Any:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError as exc:
+                raise SessionError("Invalid Content-Length") from exc
+            if length <= 0 or length > 65536:
+                raise SessionError("Request body must be between 1 and 65536 bytes")
+            try:
+                return json.loads(self.rfile.read(length))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise SessionError("Invalid JSON request body") from exc
 
         def _handle_error(self, exc: Exception) -> None:
             if isinstance(exc, SessionNotFound):
@@ -347,6 +427,17 @@ def make_handler(backend: SessionBackend, web_file: pathlib.Path) -> type[BaseHT
                 self._check_local_host()
                 self._check_mutation_origin()
                 parts = self._parts()
+                if parts == ["api", "sessions", "delete"]:
+                    body = self._read_json()
+                    session_ids = body.get("ids") if isinstance(body, dict) else None
+                    if not isinstance(session_ids, list) or not all(
+                        isinstance(item, str) for item in session_ids
+                    ):
+                        raise SessionError("ids must be an array of session UUIDs")
+                    if len(session_ids) > 500:
+                        raise SessionError("No more than 500 sessions may be deleted at once")
+                    self._send_json(200, backend.delete_sessions(session_ids))
+                    return
                 if len(parts) != 4 or parts[:2] != ["api", "sessions"]:
                     self._send_json(404, {"error": "Not found"})
                     return

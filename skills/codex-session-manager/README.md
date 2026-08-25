@@ -8,7 +8,7 @@
 - 已安装且能被当前 Python 进程从 `PATH` 找到的 Codex CLI
 - Codex CLI 版本需包含 `archive`、`unarchive`、`delete --force` 子命令
 
-工具从 `$CODEX_HOME` 读取数据；未设置时使用 `~/.codex`。列表和详情只读扫描 `sessions`、`archived_sessions` 及 `session_index.jsonl`，归档和删除则始终调用官方 Codex CLI，不直接修改内部存储。
+工具从 `$CODEX_HOME` 读取数据；未设置时使用 `~/.codex`。列表和详情只读扫描 `sessions`、`archived_sessions` 及 `session_index.jsonl`。如果索引中没有会话名，会使用会话里的首条用户消息作为显示名称；归档和删除则始终调用官方 Codex CLI，不直接修改内部存储。
 
 ## CLI
 
@@ -48,7 +48,7 @@ python3 codex_sessions.py web --open
 python3 codex_sessions.py web --port 8765
 ```
 
-默认自动选择空闲端口，并在标准输出打印 URL。页面支持按标题、cwd、状态和 ID 过滤，并提供 Archive、Unarchive 和 Delete 操作；删除前会再次确认。
+默认自动选择空闲端口，并在标准输出打印 URL。页面支持按标题、cwd、状态和 ID 过滤，并提供 Archive、Unarchive、单条删除和多选批量删除操作；删除前会再次确认。
 
 HTTP API：
 
@@ -56,6 +56,7 @@ HTTP API：
 GET    /api/sessions
 GET    /api/sessions/<id>
 DELETE /api/sessions/<id>
+POST   /api/sessions/delete        {"ids": ["<id>", "<id>"]}
 POST   /api/sessions/<id>/archive
 POST   /api/sessions/<id>/unarchive
 ```

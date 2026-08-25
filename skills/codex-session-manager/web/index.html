@@ -11,11 +11,17 @@
     header { display: flex; gap: 20px; align-items: end; justify-content: space-between; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 28px; }
     .muted { color: #9da7b1; }
-    input { width: min(360px, 80vw); padding: 10px 12px; border: 1px solid #3a4148; border-radius: 8px; background: #181c20; color: inherit; }
+    input[type="search"] { width: min(360px, 80vw); padding: 10px 12px; border: 1px solid #3a4148; border-radius: 8px; background: #181c20; color: inherit; }
     #status { min-height: 24px; margin: 18px 0 8px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 14px; }
+    .toolbar .spacer { flex: 1; }
     .grid { display: grid; gap: 12px; }
     article { border: 1px solid #30363d; border-radius: 10px; padding: 16px; background: #171a1e; }
+    article.selected { border-color: #718096; background: #1b2025; }
     .row { display: flex; gap: 12px; justify-content: space-between; align-items: start; flex-wrap: wrap; }
+    .session-info { display: flex; gap: 12px; min-width: 0; }
+    .session-info > div { min-width: 0; }
+    .session-check { width: 18px; height: 18px; margin-top: 2px; padding: 0; accent-color: #7c9cc4; }
     h2 { font-size: 17px; margin: 0 0 10px; overflow-wrap: anywhere; }
     dl { display: grid; grid-template-columns: 88px 1fr; gap: 5px 10px; margin: 0; font-size: 14px; }
     dt { color: #9da7b1; }
@@ -34,13 +40,25 @@
     <input id="filter" type="search" placeholder="Filter title, cwd, state, or ID" autocomplete="off">
   </header>
   <div id="status" class="muted">Loading…</div>
+  <div class="toolbar">
+    <button id="select-shown">Select shown</button>
+    <button id="clear-selection">Clear</button>
+    <span id="selection-status" class="muted">0 selected</span>
+    <span class="spacer"></span>
+    <button id="delete-selected" class="danger" disabled>Delete selected</button>
+  </div>
   <section id="sessions" class="grid" aria-live="polite"></section>
 </main>
 <script>
   const list = document.querySelector('#sessions');
   const status = document.querySelector('#status');
   const filter = document.querySelector('#filter');
+  const selectShown = document.querySelector('#select-shown');
+  const clearSelection = document.querySelector('#clear-selection');
+  const selectionStatus = document.querySelector('#selection-status');
+  const deleteSelected = document.querySelector('#delete-selected');
   let sessions = [];
+  const selected = new Set();
 
   function el(name, text, className) {
     const node = document.createElement(name);
@@ -63,14 +81,26 @@
     list.replaceChildren();
     for (const session of shown) {
       const card = el('article');
+      if (selected.has(session.id)) card.classList.add('selected');
       const row = el('div', undefined, 'row');
-      const info = el('div');
+      const info = el('div', undefined, 'session-info');
+      const check = el('input', undefined, 'session-check');
+      check.type = 'checkbox';
+      check.checked = selected.has(session.id);
+      check.setAttribute('aria-label', `Select ${session.title}`);
+      check.onchange = () => {
+        if (check.checked) selected.add(session.id);
+        else selected.delete(session.id);
+        render();
+      };
+      const details = el('div');
       const dl = el('dl');
       field(dl, 'cwd', session.cwd);
       field(dl, 'updated', formatTime(session.updated_at));
       field(dl, 'state', session.archived ? 'Archived' : 'Active');
       field(dl, 'session ID', session.id);
-      info.append(el('h2', session.title), dl);
+      details.append(el('h2', session.title), dl);
+      info.append(check, details);
       const actions = el('div', undefined, 'actions');
       const archive = el('button', session.archived ? 'Unarchive' : 'Archive');
       const remove = el('button', 'Delete', 'danger');
@@ -82,6 +112,9 @@
       list.append(card);
     }
     status.textContent = `${shown.length} of ${sessions.length} sessions`;
+    selectionStatus.textContent = `${selected.size} selected`;
+    deleteSelected.disabled = selected.size === 0;
+    clearSelection.disabled = selected.size === 0;
   }
   async function request(url, options) {
     const response = await fetch(url, options);
@@ -92,6 +125,8 @@
   async function load() {
     try {
       sessions = await request('/api/sessions');
+      const available = new Set(sessions.map(session => session.id));
+      for (const id of selected) if (!available.has(id)) selected.delete(id);
       render();
     } catch (error) {
       status.textContent = `Error: ${error.message}`;
@@ -118,6 +153,39 @@
       button.disabled = false;
     }
   }
+  selectShown.onclick = () => {
+    const query = filter.value.trim().toLowerCase();
+    for (const session of sessions) {
+      if ([session.title, session.cwd, session.id, session.archived ? 'archived' : 'active']
+          .join(' ').toLowerCase().includes(query)) selected.add(session.id);
+    }
+    render();
+  };
+  clearSelection.onclick = () => {
+    selected.clear();
+    render();
+  };
+  deleteSelected.onclick = async () => {
+    const ids = [...selected];
+    if (!confirm(`Permanently delete ${ids.length} selected session(s)? This cannot be undone.`)) return;
+    deleteSelected.disabled = true;
+    try {
+      const result = await request('/api/sessions/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids})
+      });
+      for (const id of result.deleted) selected.delete(id);
+      await load();
+      if (result.failed.length) {
+        status.textContent = `Deleted ${result.deleted.length}; failed ${result.failed.length}: ` +
+          result.failed.map(item => `${item.id}: ${item.error}`).join('; ');
+      }
+    } catch (error) {
+      status.textContent = `Error: ${error.message}`;
+      deleteSelected.disabled = false;
+    }
+  };
   filter.addEventListener('input', render);
   load();
 </script>

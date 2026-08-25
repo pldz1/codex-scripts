@@ -1,0 +1,306 @@
+diff --git a/skills/codex-session-manager/README.md b/skills/codex-session-manager/README.md
+index 70b27ed..a71705a 100644
+--- a/skills/codex-session-manager/README.md
++++ b/skills/codex-session-manager/README.md
+@@ -8,7 +8,7 @@
+ - 已安装且能被当前 Python 进程从 `PATH` 找到的 Codex CLI
+ - Codex CLI 版本需包含 `archive`、`unarchive`、`delete --force` 子命令
+ 
+-工具从 `$CODEX_HOME` 读取数据；未设置时使用 `~/.codex`。列表和详情只读扫描 `sessions`、`archived_sessions` 及 `session_index.jsonl`，归档和删除则始终调用官方 Codex CLI，不直接修改内部存储。
++工具从 `$CODEX_HOME` 读取数据；未设置时使用 `~/.codex`。列表和详情只读扫描 `sessions`、`archived_sessions` 及 `session_index.jsonl`。如果索引中没有会话名，会使用会话里的首条用户消息作为显示名称；归档和删除则始终调用官方 Codex CLI，不直接修改内部存储。
+ 
+ ## CLI
+ 
+@@ -48,7 +48,7 @@ python3 codex_sessions.py web --open
+ python3 codex_sessions.py web --port 8765
+ ```
+ 
+-默认自动选择空闲端口，并在标准输出打印 URL。页面支持按标题、cwd、状态和 ID 过滤，并提供 Archive、Unarchive 和 Delete 操作；删除前会再次确认。
++默认自动选择空闲端口，并在标准输出打印 URL。页面支持按标题、cwd、状态和 ID 过滤，并提供 Archive、Unarchive、单条删除和多选批量删除操作；删除前会再次确认。
+ 
+ HTTP API：
+ 
+@@ -56,6 +56,7 @@ HTTP API：
+ GET    /api/sessions
+ GET    /api/sessions/<id>
+ DELETE /api/sessions/<id>
++POST   /api/sessions/delete        {"ids": ["<id>", "<id>"]}
+ POST   /api/sessions/<id>/archive
+ POST   /api/sessions/<id>/unarchive
+ ```
+diff --git a/skills/codex-session-manager/codex_sessions.py b/skills/codex-session-manager/codex_sessions.py
+index f81b62a..0768dbb 100644
+--- a/skills/codex-session-manager/codex_sessions.py
++++ b/skills/codex-session-manager/codex_sessions.py
+@@ -26,6 +26,8 @@ UUID_RE = re.compile(
+ )
+ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+ WEB_FILE = SCRIPT_DIR / "web" / "index.html"
++FALLBACK_TITLE_LENGTH = 80
++UNTITLED_SESSION = "Untitled session"
+ 
+ 
+ class SessionError(RuntimeError):
+@@ -134,6 +136,40 @@ class SessionBackend:
+         return payload if isinstance(payload, dict) else None
+ 
+     @staticmethod
++    def _fallback_title(path: pathlib.Path) -> str | None:
++        """Use the first real user prompt when the session index has no title."""
++        try:
++            with path.open(encoding="utf-8") as handle:
++                for line in handle:
++                    try:
++                        record = json.loads(line)
++                    except json.JSONDecodeError:
++                        continue
++                    if record.get("type") != "response_item":
++                        continue
++                    payload = record.get("payload")
++                    if not isinstance(payload, dict) or payload.get("role") != "user":
++                        continue
++                    content = payload.get("content")
++                    if not isinstance(content, list):
++                        continue
++                    for part in content:
++                        if not isinstance(part, dict) or part.get("type") != "input_text":
++                            continue
++                        text = part.get("text")
++                        if not isinstance(text, str):
++                            continue
++                        title = " ".join(text.split())
++                        if not title or title.startswith("<environment_context>"):
++                            continue
++                        if len(title) > FALLBACK_TITLE_LENGTH:
++                            title = title[: FALLBACK_TITLE_LENGTH - 1].rstrip() + "…"
++                        return title
++        except (OSError, UnicodeDecodeError):
++            pass
++        return None
++
++    @staticmethod
+     def _iso_timestamp(value: Any, fallback: float) -> str:
+         if isinstance(value, str) and value.strip():
+             try:
+@@ -161,7 +197,7 @@ class SessionBackend:
+         index_entry = index.get(session_id, {})
+         return Session(
+             id=session_id,
+-            title=index_entry.get("title", session_id),
++            title=index_entry.get("title") or self._fallback_title(path) or UNTITLED_SESSION,
+             cwd=str(metadata.get("cwd") or ""),
+             updated_at=self._iso_timestamp(index_entry.get("updated_at"), stat.st_mtime),
+             created_at=self._iso_timestamp(metadata.get("timestamp"), stat.st_ctime),
+@@ -245,6 +281,38 @@ class SessionBackend:
+         self._run_codex(["delete", "--force", session.id])
+         return {"id": session.id, "operation": "deleted"}
+ 
++    def delete_sessions(self, session_ids: Iterable[str]) -> dict[str, Any]:
++        """Delete sessions sequentially and report partial failures."""
++        raw_ids = list(session_ids)
++        if not raw_ids:
++            raise SessionError("At least one session UUID is required")
++        deleted: list[str] = []
++        failed: list[dict[str, str]] = []
++        normalized_ids: list[str] = []
++        seen: set[str] = set()
++        for session_id in raw_ids:
++            try:
++                normalized = self._validate_id(session_id)
++            except SessionError as exc:
++                failed.append({"id": str(session_id), "error": str(exc)})
++                continue
++            if normalized not in seen:
++                normalized_ids.append(normalized)
++                seen.add(normalized)
++        existing = {session.id for session in self.list_sessions()}
++        for session_id in normalized_ids:
++            if session_id not in existing:
++                failed.append(
++                    {"id": session_id, "error": f"Session not found: {session_id}"}
++                )
++                continue
++            try:
++                self._run_codex(["delete", "--force", session_id])
++                deleted.append(session_id)
++            except SessionError as exc:
++                failed.append({"id": session_id, "error": str(exc)})
++        return {"deleted": deleted, "failed": failed}
++
+     def archive_session(self, session_id: str) -> dict[str, Any]:
+         session = self._existing(session_id)
+         if session.archived:
+@@ -287,6 +355,18 @@ def make_handler(backend: SessionBackend, web_file: pathlib.Path) -> type[BaseHT
+         def _parts(self) -> list[str]:
+             path = urllib.parse.urlsplit(self.path).path
+             return [urllib.parse.unquote(part) for part in path.split("/") if part]
++
++        def _read_json(self) -> Any:
++            try:
++                length = int(self.headers.get("Content-Length", "0"))
++            except ValueError as exc:
++                raise SessionError("Invalid Content-Length") from exc
++            if length <= 0 or length > 65536:
++                raise SessionError("Request body must be between 1 and 65536 bytes")
++            try:
++                return json.loads(self.rfile.read(length))
++            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
++                raise SessionError("Invalid JSON request body") from exc
+ 
+         def _handle_error(self, exc: Exception) -> None:
+             if isinstance(exc, SessionNotFound):
+@@ -347,6 +427,17 @@ def make_handler(backend: SessionBackend, web_file: pathlib.Path) -> type[BaseHT
+                 self._check_local_host()
+                 self._check_mutation_origin()
+                 parts = self._parts()
++                if parts == ["api", "sessions", "delete"]:
++                    body = self._read_json()
++                    session_ids = body.get("ids") if isinstance(body, dict) else None
++                    if not isinstance(session_ids, list) or not all(
++                        isinstance(item, str) for item in session_ids
++                    ):
++                        raise SessionError("ids must be an array of session UUIDs")
++                    if len(session_ids) > 500:
++                        raise SessionError("No more than 500 sessions may be deleted at once")
++                    self._send_json(200, backend.delete_sessions(session_ids))
++                    return
+                 if len(parts) != 4 or parts[:2] != ["api", "sessions"]:
+                     self._send_json(404, {"error": "Not found"})
+                     return
+diff --git a/skills/codex-session-manager/web/index.html b/skills/codex-session-manager/web/index.html
+index d8b0e09..cf9f902 100644
+--- a/skills/codex-session-manager/web/index.html
++++ b/skills/codex-session-manager/web/index.html
+@@ -11,11 +11,17 @@
+     header { display: flex; gap: 20px; align-items: end; justify-content: space-between; flex-wrap: wrap; }
+     h1 { margin: 0; font-size: 28px; }
+     .muted { color: #9da7b1; }
+-    input { width: min(360px, 80vw); padding: 10px 12px; border: 1px solid #3a4148; border-radius: 8px; background: #181c20; color: inherit; }
++    input[type="search"] { width: min(360px, 80vw); padding: 10px 12px; border: 1px solid #3a4148; border-radius: 8px; background: #181c20; color: inherit; }
+     #status { min-height: 24px; margin: 18px 0 8px; }
++    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 14px; }
++    .toolbar .spacer { flex: 1; }
+     .grid { display: grid; gap: 12px; }
+     article { border: 1px solid #30363d; border-radius: 10px; padding: 16px; background: #171a1e; }
++    article.selected { border-color: #718096; background: #1b2025; }
+     .row { display: flex; gap: 12px; justify-content: space-between; align-items: start; flex-wrap: wrap; }
++    .session-info { display: flex; gap: 12px; min-width: 0; }
++    .session-info > div { min-width: 0; }
++    .session-check { width: 18px; height: 18px; margin-top: 2px; padding: 0; accent-color: #7c9cc4; }
+     h2 { font-size: 17px; margin: 0 0 10px; overflow-wrap: anywhere; }
+     dl { display: grid; grid-template-columns: 88px 1fr; gap: 5px 10px; margin: 0; font-size: 14px; }
+     dt { color: #9da7b1; }
+@@ -34,13 +40,25 @@
+     <input id="filter" type="search" placeholder="Filter title, cwd, state, or ID" autocomplete="off">
+   </header>
+   <div id="status" class="muted">Loading…</div>
++  <div class="toolbar">
++    <button id="select-shown">Select shown</button>
++    <button id="clear-selection">Clear</button>
++    <span id="selection-status" class="muted">0 selected</span>
++    <span class="spacer"></span>
++    <button id="delete-selected" class="danger" disabled>Delete selected</button>
++  </div>
+   <section id="sessions" class="grid" aria-live="polite"></section>
+ </main>
+ <script>
+   const list = document.querySelector('#sessions');
+   const status = document.querySelector('#status');
+   const filter = document.querySelector('#filter');
++  const selectShown = document.querySelector('#select-shown');
++  const clearSelection = document.querySelector('#clear-selection');
++  const selectionStatus = document.querySelector('#selection-status');
++  const deleteSelected = document.querySelector('#delete-selected');
+   let sessions = [];
++  const selected = new Set();
+ 
+   function el(name, text, className) {
+     const node = document.createElement(name);
+@@ -63,14 +81,26 @@
+     list.replaceChildren();
+     for (const session of shown) {
+       const card = el('article');
++      if (selected.has(session.id)) card.classList.add('selected');
+       const row = el('div', undefined, 'row');
+-      const info = el('div');
++      const info = el('div', undefined, 'session-info');
++      const check = el('input', undefined, 'session-check');
++      check.type = 'checkbox';
++      check.checked = selected.has(session.id);
++      check.setAttribute('aria-label', `Select ${session.title}`);
++      check.onchange = () => {
++        if (check.checked) selected.add(session.id);
++        else selected.delete(session.id);
++        render();
++      };
++      const details = el('div');
+       const dl = el('dl');
+       field(dl, 'cwd', session.cwd);
+       field(dl, 'updated', formatTime(session.updated_at));
+       field(dl, 'state', session.archived ? 'Archived' : 'Active');
+       field(dl, 'session ID', session.id);
+-      info.append(el('h2', session.title), dl);
++      details.append(el('h2', session.title), dl);
++      info.append(check, details);
+       const actions = el('div', undefined, 'actions');
+       const archive = el('button', session.archived ? 'Unarchive' : 'Archive');
+       const remove = el('button', 'Delete', 'danger');
+@@ -82,6 +112,9 @@
+       list.append(card);
+     }
+     status.textContent = `${shown.length} of ${sessions.length} sessions`;
++    selectionStatus.textContent = `${selected.size} selected`;
++    deleteSelected.disabled = selected.size === 0;
++    clearSelection.disabled = selected.size === 0;
+   }
+   async function request(url, options) {
+     const response = await fetch(url, options);
+@@ -92,6 +125,8 @@
+   async function load() {
+     try {
+       sessions = await request('/api/sessions');
++      const available = new Set(sessions.map(session => session.id));
++      for (const id of selected) if (!available.has(id)) selected.delete(id);
+       render();
+     } catch (error) {
+       status.textContent = `Error: ${error.message}`;
+@@ -118,6 +153,39 @@
+       button.disabled = false;
+     }
+   }
++  selectShown.onclick = () => {
++    const query = filter.value.trim().toLowerCase();
++    for (const session of sessions) {
++      if ([session.title, session.cwd, session.id, session.archived ? 'archived' : 'active']
++          .join(' ').toLowerCase().includes(query)) selected.add(session.id);
++    }
++    render();
++  };
++  clearSelection.onclick = () => {
++    selected.clear();
++    render();
++  };
++  deleteSelected.onclick = async () => {
++    const ids = [...selected];
++    if (!confirm(`Permanently delete ${ids.length} selected session(s)? This cannot be undone.`)) return;
++    deleteSelected.disabled = true;
++    try {
++      const result = await request('/api/sessions/delete', {
++        method: 'POST',
++        headers: {'Content-Type': 'application/json'},
++        body: JSON.stringify({ids})
++      });
++      for (const id of result.deleted) selected.delete(id);
++      await load();
++      if (result.failed.length) {
++        status.textContent = `Deleted ${result.deleted.length}; failed ${result.failed.length}: ` +
++          result.failed.map(item => `${item.id}: ${item.error}`).join('; ');
++      }
++    } catch (error) {
++      status.textContent = `Error: ${error.message}`;
++      deleteSelected.disabled = false;
++    }
++  };
+   filter.addEventListener('input', render);
+   load();
+ </script>
