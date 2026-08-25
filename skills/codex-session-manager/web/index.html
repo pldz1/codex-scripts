@@ -22,7 +22,7 @@
     .session-info { display: flex; gap: 12px; min-width: 0; }
     .session-info > div { min-width: 0; }
     .session-check { width: 18px; height: 18px; margin-top: 2px; padding: 0; accent-color: #7c9cc4; }
-    h2 { font-size: 17px; margin: 0 0 10px; overflow-wrap: anywhere; }
+    h2 { max-width: min(560px, 58vw); margin: 0 0 10px; overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
     dl { display: grid; grid-template-columns: 88px 1fr; gap: 5px 10px; margin: 0; font-size: 14px; }
     dt { color: #9da7b1; }
     dd { margin: 0; overflow-wrap: anywhere; }
@@ -30,7 +30,13 @@
     button { border: 1px solid #4a535c; border-radius: 7px; padding: 7px 11px; background: #242a30; color: inherit; cursor: pointer; }
     button:hover { background: #303841; }
     button.danger { border-color: #8d4040; color: #ffb5b5; }
-    button:disabled { opacity: .55; cursor: wait; }
+    button:disabled { opacity: .55; cursor: unset; }
+    .loading-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgb(8 10 12 / 72%); backdrop-filter: blur(2px); }
+    .loading-overlay[hidden] { display: none; }
+    .loading-panel { display: flex; gap: 12px; align-items: center; padding: 18px 22px; border: 1px solid #414a53; border-radius: 10px; background: #171a1e; box-shadow: 0 14px 40px rgb(0 0 0 / 45%); }
+    .spinner { width: 20px; height: 20px; border: 3px solid #4a535c; border-top-color: #eef1f4; border-radius: 50%; animation: spin .75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.5s; } }
   </style>
 </head>
 <body>
@@ -49,7 +55,14 @@
   </div>
   <section id="sessions" class="grid" aria-live="polite"></section>
 </main>
+<div id="delete-loading" class="loading-overlay" role="status" aria-live="assertive" hidden>
+  <div class="loading-panel">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>Deleting session(s)…</span>
+  </div>
+</div>
 <script>
+  const app = document.querySelector('main');
   const list = document.querySelector('#sessions');
   const status = document.querySelector('#status');
   const filter = document.querySelector('#filter');
@@ -57,7 +70,9 @@
   const clearSelection = document.querySelector('#clear-selection');
   const selectionStatus = document.querySelector('#selection-status');
   const deleteSelected = document.querySelector('#delete-selected');
+  const deleteLoading = document.querySelector('#delete-loading');
   let sessions = [];
+  let deleteInProgress = false;
   const selected = new Set();
 
   function el(name, text, className) {
@@ -73,11 +88,20 @@
   function field(dl, name, value) {
     dl.append(el('dt', name), el('dd', value || '—'));
   }
-  function render() {
+  function filteredSessions() {
     const query = filter.value.trim().toLowerCase();
-    const shown = sessions.filter(session => [
+    return sessions.filter(session => [
       session.title, session.cwd, session.id, session.archived ? 'archived' : 'active'
     ].join(' ').toLowerCase().includes(query));
+  }
+  function setDeleteLoading(active) {
+    deleteInProgress = active;
+    deleteLoading.hidden = !active;
+    app.inert = active;
+    app.setAttribute('aria-busy', String(active));
+  }
+  function render() {
+    const shown = filteredSessions();
     list.replaceChildren();
     for (const session of shown) {
       const card = el('article');
@@ -99,7 +123,9 @@
       field(dl, 'updated', formatTime(session.updated_at));
       field(dl, 'state', session.archived ? 'Archived' : 'Active');
       field(dl, 'session ID', session.id);
-      details.append(el('h2', session.title), dl);
+      const title = el('h2', session.title);
+      title.title = session.title;
+      details.append(title, dl);
       info.append(check, details);
       const actions = el('div', undefined, 'actions');
       const archive = el('button', session.archived ? 'Unarchive' : 'Archive');
@@ -113,6 +139,9 @@
     }
     status.textContent = `${shown.length} of ${sessions.length} sessions`;
     selectionStatus.textContent = `${selected.size} selected`;
+    const allShownSelected = shown.length > 0 && shown.every(session => selected.has(session.id));
+    selectShown.textContent = allShownSelected ? 'Unselect shown' : 'Select shown';
+    selectShown.disabled = shown.length === 0;
     deleteSelected.disabled = selected.size === 0;
     clearSelection.disabled = selected.size === 0;
   }
@@ -143,21 +172,26 @@
     }
   }
   async function removeSession(session, button) {
+    if (deleteInProgress) return;
     if (!confirm(`Permanently delete “${session.title}” (${session.id})? This cannot be undone.`)) return;
     button.disabled = true;
+    setDeleteLoading(true);
     try {
       await request(`/api/sessions/${encodeURIComponent(session.id)}`, {method: 'DELETE'});
       await load();
     } catch (error) {
       status.textContent = `Error: ${error.message}`;
+    } finally {
       button.disabled = false;
+      setDeleteLoading(false);
     }
   }
   selectShown.onclick = () => {
-    const query = filter.value.trim().toLowerCase();
-    for (const session of sessions) {
-      if ([session.title, session.cwd, session.id, session.archived ? 'archived' : 'active']
-          .join(' ').toLowerCase().includes(query)) selected.add(session.id);
+    const shown = filteredSessions();
+    const allShownSelected = shown.length > 0 && shown.every(session => selected.has(session.id));
+    for (const session of shown) {
+      if (allShownSelected) selected.delete(session.id);
+      else selected.add(session.id);
     }
     render();
   };
@@ -166,9 +200,11 @@
     render();
   };
   deleteSelected.onclick = async () => {
+    if (deleteInProgress) return;
     const ids = [...selected];
     if (!confirm(`Permanently delete ${ids.length} selected session(s)? This cannot be undone.`)) return;
     deleteSelected.disabled = true;
+    setDeleteLoading(true);
     try {
       const result = await request('/api/sessions/delete', {
         method: 'POST',
@@ -183,7 +219,9 @@
       }
     } catch (error) {
       status.textContent = `Error: ${error.message}`;
-      deleteSelected.disabled = false;
+    } finally {
+      deleteSelected.disabled = selected.size === 0;
+      setDeleteLoading(false);
     }
   };
   filter.addEventListener('input', render);
