@@ -304,6 +304,15 @@ svg { display: block; }
 .thinking-live b { color: #555651; font-size: 10px; }
 .thinking-live span { font-size: 8px; }
 
+.status-line { margin: 7px 48px 22px 36px; display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafaf8; color: #656660; }
+.status-line > svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: #6f706b; }
+.status-line > div { min-width: 0; }
+.status-line b { display: block; font-size: 11px; font-weight: 600; }
+.status-line pre { overflow: auto; margin: 4px 0 0; color: var(--muted); white-space: pre-wrap; font: 10px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.status-line.success > svg { color: var(--green); }
+.status-line.warning { border-color: #ead3a9; background: #fffaf0; }
+.status-line.warning > svg { color: #a56b1d; }
+
 .approval-card { margin: 7px 48px 25px 36px; display: grid; grid-template-columns: 31px minmax(0, 1fr); gap: 11px; padding: 14px; border: 1px solid #e5c392; border-radius: 13px; background: #fffbf3; }
 .approval-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: #f7e6c7; color: #9c641e; }
 .approval-icon svg { width: 16px; height: 16px; }
@@ -351,6 +360,9 @@ svg { display: block; }
 .model-trigger .trigger-chevron { width: 12px; height: 12px; color: #92938d; }
 .model-trigger span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .effort-chip { padding: 4px 7px; border-radius: 7px; background: #f0f0ec; color: #858680; font-size: 7.5px; text-transform: capitalize; }
+.permission-control { min-width: 0; display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 7.5px; }
+.permission-control select { max-width: 122px; height: 25px; padding: 0 19px 0 6px; border: 1px solid var(--line); border-radius: 7px; outline: 0; background: var(--soft); color: var(--ink); font-size: 8px; cursor: pointer; }
+.permission-control select:disabled { cursor: not-allowed; opacity: .6; }
 .send { width: 33px; height: 33px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: #242422; color: #fff; cursor: pointer; transition: transform 120ms ease, background 120ms ease; }
 .send:hover { background: #080806; transform: translateY(-1px); }
 .send:active { transform: scale(0.94); }
@@ -619,6 +631,8 @@ svg { display: block; }
   .model-trigger { max-width: 160px; padding: 0 5px; }
   .model-trigger > svg:first-child { display: none; }
   .effort-chip { display: none; }
+  .permission-control > span { display: none; }
+  .permission-control select { max-width: 108px; }
   .send { width: 34px; height: 34px; }
   .composer-actions { gap: 5px; }
   .context-tooltip { right: -39px; width: 205px; }
@@ -663,6 +677,8 @@ svg { display: block; }
   .user-bubble { background: #292a27; color: #eceDE9; }
   .assistant-body code, .user-bubble code { background: #2b2c29; }
   .activity-group, .activity-group > header, .activity-list, .tool-row.thinking .tool-output { background: #20211f; }
+  .status-line { background: #20211f; }
+  .status-line.warning { background: #30291c; border-color: #625134; }
   .tool-summary:hover { background: #292a27; }
   .tool-copy b { color: #d6d7d2; }
   .tool-output, .diff { background: #191a18; }
@@ -676,6 +692,7 @@ svg { display: block; }
   .model-menu > button:hover { background: #292a27; }
   .model-menu > button.selected { background: #2c333d; }
   .effort-chip { background: #2a2b28; }
+  .permission-control select { background: #2a2b28; }
   .effort-title strong { background: #29323d; color: #8db5e7; }
   .effort-range::-webkit-slider-runnable-track { background: linear-gradient(90deg, #6e9dd4 var(--effort-progress), #3b3d38 var(--effort-progress)); }
   .effort-range::-moz-range-track, .usage-meter { background: #3b3d38; }
@@ -690,3 +707,78 @@ svg { display: block; }
   .search { background: #222320; }
   @media (max-width: 700px) { .composer-wrap { background: linear-gradient(transparent, var(--bg) 28%); } .preview-pane { background: #20211f; } }
 }
+
+/* Keep the interface compact, but use comfortable reading sizes on modern displays. */
+.workspace-switcher small { font-size: 8px; }
+.workspace-switcher b, .model-trigger { font-size: 10.5px; }
+.search-threads input { font-size: 11px; }
+.thread-tabs button { font-size: 9.5px; }
+.thread-tabs small, .thread small, .thread-menu button { font-size: 10px; }
+.thread b { font-size: 12px; }
+.thread-heading strong { font-size: 13px; }
+.thread-heading span, .connection { font-size: 9px; }
+.user-bubble p { font-size: 14px; }
+.assistant-body p, .assistant-body ul, .assistant-body ol { font-size: 14.5px; }
+.activity-group > header b, .approval-content header b { font-size: 11.5px; }
+.activity-group > header small, .approval-content header span { font-size: 9.5px; }
+.composer textarea { font-size: 13.5px; }
+.composer-tools { gap: 7px; }
+.attach-button { width: 34px; height: 34px; }
+.model-trigger { height: 34px; padding-inline: 10px; }
+.permission-control { display: block; }
+.permission-control { position: relative; }
+.permission-trigger { height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: #5a5b56; font: inherit; font-size: 10.5px; cursor: pointer; }
+.permission-trigger:hover, .permission-trigger[aria-expanded="true"] { background: var(--soft); }
+.permission-trigger:disabled { cursor: not-allowed; opacity: .55; }
+.permission-trigger > svg:first-child { width: 14px; height: 14px; color: #7b7c76; }
+.permission-trigger > svg:last-child { width: 12px; height: 12px; color: #92938d; }
+.permission-menu { position: absolute; bottom: 40px; left: -38px; z-index: 35; width: 260px; padding: 7px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(24, 24, 18, .17), 0 3px 10px rgba(24, 24, 18, .05); }
+.permission-menu button { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 8px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.permission-menu button:hover { background: var(--soft); }
+.permission-menu button.selected { background: #eff2f5; }
+.permission-menu button > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.permission-menu b { font-size: 10.5px; font-weight: 600; }
+.permission-menu small { color: var(--muted); font-size: 8.5px; }
+.permission-menu > button > svg { width: 14px; height: 14px; color: #356fbe; }
+.effort-chip { padding: 5px 8px; font-size: 10px; font-weight: 550; }
+.tool-copy small, .thinking-live span, .attachment-chip small, .attachment-error { font-size: 9px; }
+.context-tooltip b, .context-tooltip em, .context-tooltip small { font-size: 9px; }
+.file-drawer > header span, .settings > header span, .workspace-picker > header span, .diff-drawer > header span { font-size: 8px; }
+.workspace-folders small, .workspace-current small, .workspace-current em { font-size: 9px; }
+.composer-hint { font-size: 8.5px; }
+.empty-chat p { font-size: 11.5px; }
+.settings-section h3 { font-size: 10px; }
+.resource-total small, .resource-grid small, .context-primary small, .account-grid small, .rate-usage small { font-size: 8px; }
+.resource-grid b, .account-grid b, .rate-usage b { font-size: 9.5px; }
+.settings-empty { font-size: 9px; }
+
+@media (max-width: 700px) {
+  .user-bubble p, .assistant-body p, .assistant-body ul, .assistant-body ol { font-size: 13px; }
+  .composer textarea { font-size: 13px; }
+}
+
+/* Drawers are read-heavy surfaces: use the same legible scale as the conversation. */
+.file-drawer > header span, .settings > header span, .workspace-picker > header span, .diff-drawer > header span { font-size: 9px; }
+.file-drawer > header b, .settings > header b, .workspace-picker > header b, .diff-drawer > header b { font-size: 14px; }
+.search input, .file-tree-actions > button, .new-file-form input, .new-file-form button, .upload-notice, .tree-row span:last-child { font-size: 11px; }
+.workspace-name { font-size: 12px; }
+.preview-head > span, .file-editor, .preview-pane pre, .diff-drawer-body pre { font-size: 11px; }
+.preview-head small, .preview-actions button, .delete-confirm, .delete-confirm button { font-size: 10px; }
+.preview-unavailable b, .preview-empty b { font-size: 12px; }
+.preview-unavailable p, .preview-empty p { font-size: 10.5px; }
+.preview-unavailable small { font-size: 9.5px; }
+.settings-section h3 { height: 28px; font-size: 12px; }
+.settings-section h3 small { font-size: 8px; }
+.resource-total small, .resource-grid small, .context-primary small, .account-grid small, .rate-usage small { font-size: 10px; }
+.resource-total em, .context-details, .rate-usage em { font-size: 10px; }
+.resource-total b { font-size: 20px; }
+.resource-grid b, .account-grid b, .rate-usage b { font-size: 12px; }
+.context-primary b { font-size: 14px; }
+.context-primary em { font-size: 12px; }
+.context-details b { font-size: 11px; }
+.settings-empty, .settings dt { font-size: 11px; }
+.settings dd { font-size: 10px; }
+.workspace-breadcrumb button, .workspace-current b, .workspace-folders b, .workspace-folders > p, .workspace-picker > footer button { font-size: 11px; }
+.workspace-current small, .workspace-current em, .workspace-folders small, .workspace-picker > footer span { font-size: 10px; }
+.changed-files button b, .file-diff-head > span { font-size: 11px; }
+.changed-files button small, .changed-files button em, .file-diff-head > div, .diff-count { font-size: 10px; }

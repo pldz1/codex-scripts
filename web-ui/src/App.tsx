@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, GitCompareArrows, Menu, PanelLeftOpen, Settings2 } from "lucide-react";
-import { Composer, type ComposerAttachment } from "./components/Composer";
+import { Composer, type ComposerAttachment, type PermissionPreset } from "./components/Composer";
 import { Conversation } from "./components/Conversation";
 import { DiffDrawer } from "./components/DiffDrawer";
 import { FileDrawer } from "./components/FileDrawer";
@@ -54,14 +54,16 @@ export function App() {
   const [models, setModels] = useState<ModelOption[]>(demo ? demoModels : []);
   const [model, setModel] = useState(demo ? demoModels[0].model : "");
   const [effort, setEffort] = useState(demo ? demoModels[0].defaultReasoningEffort : "");
+  const [permission, setPermission] = useState<PermissionPreset>("ask");
   const modelRef = useRef(model); modelRef.current = model;
   const effortRef = useRef(effort); effortRef.current = effort;
   const [running, setRunning] = useState(false); const [turnId, setTurnId] = useState<string>();
+  const [scrollRequest, setScrollRequest] = useState(0);
   const [sidebar, setSidebar] = useState(false); const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [files, setFiles] = useState(false); const [fileTarget, setFileTarget] = useState(initialFile); const [settings, setSettings] = useState(false); const [changes, setChanges] = useState(false); const [workspacePicker, setWorkspacePicker] = useState(false);
   const [meta, setMeta] = useState({ workspace: demo ? "/home/demo/project" : "", workspaceBase: demo ? "/home/demo" : "", workspaceSelected: demo, basePath: demo ? browserBasePath : "/", codexStatus: demo ? "ready" : "starting", codexVersion: "Codex" });
   const [resources, setResources] = useState<ResourceUsage | null>(demo ? { rss: 74e6, heapUsed: 19e6, heapTotal: 34e6, heapLimit: 268e6, external: 3e6, codexRss: 103e6, totalRss: 177e6, uptime: 8240, clients: 1 } : null);
-  const [account, setAccount] = useState<any>(demo ? { usage: { summary: { lifetimeTokens: 1824500, peakDailyTokens: 64200, longestRunningTurnSec: 481, currentStreakDays: 9 } }, rateLimits: { rateLimits: { limitId: "codex", primary: { usedPercent: 34, windowDurationMins: 300, resetsAt: Date.now() / 1000 + 7200 } } } } : null);
+  const [account, setAccount] = useState<any>(demo ? { usage: { summary: { lifetimeTokens: 1824500, peakDailyTokens: 64200, longestRunningTurnSec: 481, currentStreakDays: 9 } }, rateLimits: { rateLimits: { limitId: "codex", primary: { usedPercent: 34, windowDurationMins: 300, resetsAt: Date.now() / 1000 + 7200 }, secondary: { usedPercent: 61, windowDurationMins: 10080, resetsAt: Date.now() / 1000 + 172800 } } } } : null);
   const [threadUsage, setThreadUsage] = useState<ThreadUsage | null>(demo ? { total: { totalTokens: 48210, inputTokens: 42000, cachedInputTokens: 31000, outputTokens: 6210, reasoningOutputTokens: 2400 }, last: { totalTokens: 13800, inputTokens: 11200, cachedInputTokens: 8300, outputTokens: 2600, reasoningOutputTokens: 980 }, modelContextWindow: 114688 } : null); const [compaction, setCompaction] = useState<CompactionStatus>(demo ? { status: "completed", at: Date.now() - 3600000 } : null);
   const pending = useRef(new Map<string, (value: any) => void>());
   const queuedPrompt = useRef<{ id: string; text: string; attachments: ComposerAttachment[] } | null>(null);
@@ -105,6 +107,7 @@ export function App() {
   useEffect(() => { if (connected && !demo) { send({ type: "model.list" }); send({ type: "thread.list" }); send({ type: "thread.list", archived: true }); } }, [connected, send]);
   useEffect(() => { if (demo || !connected || meta.codexStatus !== "ready" || !sessionToResume.current) return; const threadId = sessionToResume.current; sessionToResume.current = ""; send({ type: "thread.resume", threadId }); }, [connected, meta.codexStatus, send]);
   useEffect(() => { if (!settings || demo || !connected) return; send({ type: "system.usage" }); send({ type: "account.usage" }); const timer = window.setInterval(() => send({ type: "system.usage" }), 2000); return () => window.clearInterval(timer); }, [settings, connected, send]);
+  useEffect(() => { if (compaction?.status !== "completed" || !compaction.at) return; const at = compaction.at; const timer = window.setTimeout(() => setCompaction((current) => current?.at === at ? null : current), 6000); return () => window.clearTimeout(timer); }, [compaction]);
   useEffect(() => { if (fileTarget && meta.workspaceSelected) setFiles(true); }, [fileTarget, meta.workspaceSelected]);
 
   const create = () => {
@@ -122,10 +125,10 @@ export function App() {
   };
   const sendTurn = (text: string, attachments: ComposerAttachment[]) => {
     if (!active && !meta.workspaceSelected) { setWorkspacePicker(true); return false; }
-    const localId = `local-${Date.now()}`; setItems((old) => [...old, { type: "user_message", id: localId, text, attachments: attachments.map((item) => ({ name: item.name, kind: item.kind, data: item.kind === "image" ? item.data : undefined })) }]);
-    if (!active) { queuedPrompt.current = { id: localId, text, attachments }; setRunning(true); send({ type: "thread.create", model, effort }); return true; }
+    const localId = `local-${Date.now()}`; setItems((old) => [...old, { type: "user_message", id: localId, text, attachments: attachments.map((item) => ({ name: item.name, kind: item.kind, data: item.kind === "image" ? item.data : undefined })) }]); setScrollRequest((value) => value + 1);
+    if (!active) { queuedPrompt.current = { id: localId, text, attachments }; setRunning(true); send({ type: "thread.create", model, effort, permission }); return true; }
     if (demo) { setRunning(true); const id = `reply-${Date.now()}`; const words = "I’m streaming this response as it arrives from Codex, while reasoning and tool activity remain visible above the final answer.".split(" "); let index = 0; const timer = window.setInterval(() => { index++; setItems((old) => mergeItems(old, [{ type: "assistant_message", id, text: `${words[index - 1]} `, streaming: true }])); if (index >= words.length) { clearInterval(timer); setItems((old) => mergeItems(old, [{ type: "assistant_message", id, text: words.join(" "), streaming: false }])); setThreadUsage({ total: { totalTokens: 1860, inputTokens: 1530, cachedInputTokens: 720, outputTokens: 330, reasoningOutputTokens: 112 }, last: { totalTokens: 1860, inputTokens: 1530, cachedInputTokens: 720, outputTokens: 330, reasoningOutputTokens: 112 }, modelContextWindow: 114688 }); setRunning(false); } }, 75); }
-    else send({ type: "turn.send", threadId: active.id, text, attachments, model, effort });
+    else send({ type: "turn.send", threadId: active.id, text, attachments, model, effort, permission });
     return true;
   };
   const request = useCallback(<T,>(key: string, message: any) => new Promise<T>((resolve) => {
@@ -162,7 +165,7 @@ export function App() {
       <header className="workspace-header"><div className="header-leading"><button className="mobile-menu icon-button" aria-label="Open threads" onClick={() => setSidebar(true)}><Menu /></button>{sidebarCollapsed && <button className="desktop-sidebar-open icon-button" aria-label="Open threads" onClick={() => setSidebarCollapsed(false)}><PanelLeftOpen /></button>}<div className="thread-heading"><strong>{title}</strong><span><i className={connected || demo ? "online" : ""} />{running ? "Codex is working" : meta.workspaceSelected ? meta.workspace.split("/").filter(Boolean).pop() : "Choose a workspace"}</span></div></div>
         <div className="header-actions"><span className={`connection ${connected || demo ? "online" : ""}`}><i />{connected || demo ? "Connected" : "Connecting"}</span>{diff && <button className="header-button changes-button" aria-label="Changes" onClick={() => setChanges(true)}><GitCompareArrows /><span>Changes</span></button>}<button className="header-button" aria-label="Files" onClick={() => meta.workspaceSelected ? setFiles(true) : setWorkspacePicker(true)}><FolderOpen /><span>Files</span></button><button className="header-icon-button" aria-label="Settings" onClick={() => setSettings(true)}><Settings2 /></button></div>
       </header>
-      <main className={`chat-main ${items.length === 0 ? "is-empty" : ""}`}><Conversation items={items} running={running} workspace={meta.workspace} basePath={meta.basePath} openFile={openWorkspaceFile} respond={(item, decision) => { const key = approvalDecisionKey(decision); setItems((old) => old.map((entry) => entry.id === item.id ? { ...item, status: key === "decline" || key === "cancel" ? "denied" : "approved" } : entry)); if (!demo) send({ type: "approval.respond", requestId: item.requestId, decision }); }} /><Composer running={running} disabled={!connected && !demo} send={sendTurn} stop={() => { if (active && turnId) send({ type: "turn.interrupt", threadId: active.id, turnId }); }} models={models} model={model} effort={effort} threadUsage={threadUsage} compaction={compaction} onModel={setModel} onEffort={setEffort} /></main>
+      <main className={`chat-main ${items.length === 0 ? "is-empty" : ""}`}><Conversation items={items} running={running} scrollRequest={scrollRequest} workspace={meta.workspace} basePath={meta.basePath} openFile={openWorkspaceFile} respond={(item, decision) => { const key = approvalDecisionKey(decision); setItems((old) => old.map((entry) => entry.id === item.id ? { ...item, status: key === "decline" || key === "cancel" ? "denied" : "approved" } : entry)); if (!demo) send({ type: "approval.respond", requestId: item.requestId, decision }); }} /><Composer running={running} disabled={!connected && !demo} send={sendTurn} stop={() => { if (active && turnId) send({ type: "turn.interrupt", threadId: active.id, turnId }); }} models={models} model={model} effort={effort} permission={permission} threadUsage={threadUsage} compaction={compaction} onModel={setModel} onEffort={setEffort} onPermission={setPermission} /></main>
     </section>
     {sidebar && <div className="drawer-layer sidebar-layer" onMouseDown={(event) => event.target === event.currentTarget && setSidebar(false)}><Sidebar {...sidebarProps} onDismiss={() => setSidebar(false)} /></div>}
     {files && <FileDrawer close={closeFiles} load={loadFiles} read={readFile} write={writeFile} upload={uploadFile} create={createFile} remove={deleteFile} initialPath={fileTarget} onSaved={(path, before, after) => setDiff((current) => [current, editDiff(path, before, after)].filter(Boolean).join("\n"))} />}

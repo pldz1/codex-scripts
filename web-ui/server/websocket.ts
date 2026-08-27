@@ -7,14 +7,24 @@ import type { WorkspaceFs } from "./filesystem.js";
 
 const send = (socket: WebSocket, data: any) => socket.readyState === socket.OPEN && socket.send(JSON.stringify(data));
 const sourceKinds = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"];
+const threadPermissionSettings = (permission: unknown) => {
+  switch (permission) {
+    case "full": return { approvalPolicy: "never", sandbox: "danger-full-access" };
+    case "read-only": return { approvalPolicy: "on-request", sandbox: "read-only" };
+    default: return { approvalPolicy: "on-request", sandbox: "workspace-write" };
+  }
+};
+const turnPermissionSettings = (permission: unknown, cwd: string) => {
+  switch (permission) {
+    case "full": return { approvalPolicy: "never", sandboxPolicy: { type: "dangerFullAccess" } };
+    case "read-only": return { approvalPolicy: "on-request", sandboxPolicy: { type: "readOnly", networkAccess: false } };
+    default: return { approvalPolicy: "on-request", sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false } };
+  }
+};
 const userMessage = (content: any[]) => ({
   text: content.filter((item: any) => item.type === "text").map((item: any) => item.text).join("\n"),
   attachments: content.filter((item: any) => ["image", "localImage", "audio", "localAudio"].includes(item.type)).map((item: any, index: number) => ({ name: item.path?.split("/").pop() || `${item.type.startsWith("audio") || item.type === "localAudio" ? "Audio" : "Image"} ${index + 1}`, kind: item.type.startsWith("audio") || item.type === "localAudio" ? "audio" : "image", data: item.url?.startsWith("data:") ? item.url : undefined })),
 });
-const compactionFor = (thread: any) => {
-  const turn = [...(thread.turns || [])].reverse().find((entry: any) => (entry.items || []).some((item: any) => item.type === "contextCompaction"));
-  return turn ? { status: "completed", at: turn.completedAt ? turn.completedAt * 1000 : undefined } : null;
-};
 async function processRss(pid?: number) {
   if (!pid || process.platform !== "linux") return null;
   try { const status = await nodeFs.readFile(`/proc/${pid}/status`, "utf8"); const value = status.match(/^VmRSS:\s+(\d+)\s+kB$/m); return value ? Number(value[1]) * 1024 : null; } catch { return null; }
@@ -57,7 +67,7 @@ export function wireSockets(wss: WebSocketServer, codex: CodexClient, fs: Worksp
           send(socket, { type: "models", models: result.data || [] });
         } else if (msg.type === "thread.create") {
           if (!fs.isSelected) throw new Error("Choose a workspace before starting a thread");
-          const result = await codex.request("thread/start", { cwd: fs.path, model: msg.model || null, approvalPolicy: "on-request", experimentalRawEvents: false });
+          const result = await codex.request("thread/start", { cwd: fs.path, model: msg.model || null, ...threadPermissionSettings(msg.permission), experimentalRawEvents: false });
           send(socket, { type: "thread.active", thread: result.thread, items: [], model: result.model, effort: result.reasoningEffort }); broadcast({ type: "thread.changed", thread: result.thread });
         } else if (msg.type === "thread.resume") {
           const result = await codex.request("thread/resume", { threadId: msg.threadId });
@@ -65,7 +75,7 @@ export function wireSockets(wss: WebSocketServer, codex: CodexClient, fs: Worksp
             try { await fs.selectAbsolute(result.thread.cwd); broadcast({ type: "status", ...meta(), codexStatus: codex.status }); } catch { /* The session can still be viewed outside the file-browser root. */ }
           }
           const pending = [...pendingApprovals.values()].filter((entry) => entry.threadId === result.thread.id).map((entry) => entry.item);
-          send(socket, { type: "thread.active", thread: result.thread, items: [...threadItems(result.thread), ...pending], compaction: compactionFor(result.thread), model: result.model, effort: result.reasoningEffort });
+          send(socket, { type: "thread.active", thread: result.thread, items: [...threadItems(result.thread), ...pending], model: result.model, effort: result.reasoningEffort });
         } else if (msg.type === "thread.archive") {
           await codex.request("thread/archive", { threadId: msg.threadId });
           broadcast({ type: "thread.mutated", action: "archive", threadId: msg.threadId });
@@ -82,7 +92,7 @@ export function wireSockets(wss: WebSocketServer, codex: CodexClient, fs: Worksp
             if (attachment.kind === "image" && typeof attachment.data === "string" && attachment.data.startsWith("data:image/") && attachment.data.length <= 14 * 1024 * 1024) input.push({ type: "image", url: attachment.data });
             else if (attachment.kind === "text" && typeof attachment.data === "string" && Buffer.byteLength(attachment.data, "utf8") <= 1024 * 1024) input.push({ type: "text", text: `Attached file \"${String(attachment.name || "attachment").slice(0, 200)}\":\n\n${attachment.data}`, text_elements: [] });
           }
-          const result = await codex.request("turn/start", { threadId: msg.threadId, input, model: msg.model || null, effort: msg.effort || null, summary: "auto" });
+          const result = await codex.request("turn/start", { threadId: msg.threadId, input, model: msg.model || null, effort: msg.effort || null, ...turnPermissionSettings(msg.permission, fs.path), summary: "auto" });
           send(socket, { type: "turn.accepted", turnId: result.turn.id });
         } else if (msg.type === "turn.interrupt") await codex.request("turn/interrupt", { threadId: msg.threadId, turnId: msg.turnId });
         else if (msg.type === "approval.respond") { pendingApprovals.delete(msg.requestId); codex.respond(msg.requestId, { decision: msg.decision }); }

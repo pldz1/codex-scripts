@@ -7,6 +7,7 @@ export type UiItem =
   | { type: "command"; id: string; command: string; output: string; status: "running" | "done" | "error" }
   | { type: "file_read"; id: string; path: string }
   | { type: "file_change"; id: string; path: string; diff?: string; status?: string }
+  | { type: "status"; id: string; title: string; detail?: string; tone?: "info" | "success" | "warning" }
   | { type: "approval"; id: string; requestId: number | string; description: string; status: "pending" | "approved" | "denied"; decisions: ApprovalDecision[]; approvalKind: "command" | "file" }
   | { type: "error"; id: string; message: string };
 

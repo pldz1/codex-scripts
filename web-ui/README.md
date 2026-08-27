@@ -15,11 +15,13 @@ Codex 的登录状态、配置和 session 仍由 Codex 自己管理；Web UI 不
 - 当前 session 写入 `?session=<id>`，刷新页面后自动恢复
 - 首次对话前选择 workspace；也可以通过环境变量预选
 - 从真实 `model/list` 读取模型与 reasoning effort
-- 流式显示回答、thinking、命令、工具调用、approval 和文件修改
+- 流式显示回答、thinking、命令、文件修改、工具调用、网页搜索、图片、hook、子 agent、review、计划更新与警告
+- 每轮活动汇总为可展开的时间线；保留文件/命令摘要和历史 context compact 记录
+- Composer 可选择会话权限：按需确认、Full access（无 sandbox / 无审批）或只读；设置会作用于后续 turn
 - 粘贴或选择图片及常见文本/代码附件；图片支持点击预览
 - 文件树、文本文件创建/删除、预览与编辑；支持向 workspace 目录上传文件
 - 按文件查看 Changes/Diff
-- 显示 context window、compact 状态、账号 usage 和实时内存占用
+- 显示 context window、实时内存占用，以及独立的 5-hour / Weekly account usage 窗口
 - 支持部署在 `/codex/` 之类的反向代理子路径
 
 ## 目录说明
@@ -72,6 +74,24 @@ http://127.0.0.1:8765/
 ```
 
 前端修改由 Vite 即时加载，后端入口通过 `tsx server/index.ts --dev` 运行。
+
+## 会话权限
+
+Composer 工具栏中的权限菜单会在创建 session 时设置权限，也会在已有 session 的下一次 turn 覆盖并延续该设置：
+
+| 选项 | Codex 策略 | 适用场景 |
+| --- | --- | --- |
+| Ask when needed | `workspace-write` + `on-request` | 默认选择；允许写入 workspace，需要时向浏览器请求确认 |
+| Full access | `danger-full-access` + `never` | 无 sandbox、无审批提示，适合可信环境的长时间 unattended 任务 |
+| Read-only | `read-only` + `on-request` | 仅检查、分析或审阅代码 |
+
+`Full access` 会允许 Codex 在当前运行账户的权限范围内执行命令。只应在本机、可信 workspace 和已理解任务影响时使用。
+
+## 活动时间线与用量
+
+- app-server 的结构化 item 会按 turn 显示；命令、读写文件、MCP/动态工具、网页搜索、图像、子 agent 和 review 都可展开查看详情。
+- 计划、hook、模型 reroute、安全等待、警告和 context compact 显示为独立状态行；compact 记录会随 session 历史保留。
+- 设置抽屉中的 account usage 会将 app-server 返回的 primary / secondary 窗口明确标为 **5-hour limit** 与 **Weekly limit**。认证方式未提供该接口时，面板显示 `Unavailable`。
 
 ## 生产运行
 
